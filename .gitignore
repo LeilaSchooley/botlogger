@@ -1,0 +1,7 @@
+*.pyc
+*.png
+*.html
+/.idea
+*.md
+/venv
+*.json
