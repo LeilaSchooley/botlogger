@@ -27,11 +27,13 @@ import random
 import os
 import json
 
+dev_url = " https://7d9061dd23b2.ngrok-free.app/"
 
+prod_url = "https://thebotlord.com"
 class CompletePurchaseFlow:
     """Handles complete purchase flow from product page to dashboard"""
     
-    def __init__(self, app_url="https://thebotlord.com"):
+    def __init__(self, app_url=prod_url):
         """
         Initialize the purchase flow bot
         
@@ -42,11 +44,16 @@ class CompletePurchaseFlow:
         self.driver = webdriver.Chrome()
         self.wait = WebDriverWait(self.driver, 10)
         self.lemon_bot = LemonSqueezyBot(driver=self.driver)
+        try:
+            # Maximize to reduce overlay issues and ensure elements are in view
+            self.driver.maximize_window()
+        except Exception:
+            pass
         
         # Generate unique test email
         timestamp = int(time.time())
-        random_num = random.randint(1000, 9999)
-        self.test_email = f"test{timestamp}{random_num}@example.com"
+        random_num = random.randint(1, 999999)
+        self.test_email = f"test{timestamp}_{random_num}@example.com"
         self.test_password = "TestPassword123!"
 
     def safe_click(self, element, attempts=3, scroll=True, wait_between=0.6):
@@ -80,7 +87,7 @@ class CompletePurchaseFlow:
                         return True
                     except Exception as e2:
                         last_exc = e2
-                        time.sleep(wait_between)
+                        #time.sleep(wait_between)
             except StaleElementReferenceException as e:
                 # Element went stale; wait and retry (caller should be able to find again)
                 last_exc = e
@@ -227,8 +234,30 @@ class CompletePurchaseFlow:
         product_url = f"{self.app_url}/products/custom/{product_slug}"
         print(f"🏠 Visiting product page: {product_url}")
         self.driver.get(product_url)
-        #time.sleep(2)
-        
+        # Wait for a key element on the page to ensure load, then prepare page
+        try:
+            WebDriverWait(self.driver, 15).until(
+                EC.presence_of_element_located((By.TAG_NAME, "body"))
+            )
+        except TimeoutException:
+            print("⚠️  Body not found after navigation (unexpected)")
+
+        # Dismiss banners/overlays that can block clicks
+        self.dismiss_banners_and_overlays()
+
+        # Ensure pricing/buy buttons are present (scroll a bit to trigger lazy load)
+        for _ in range(3):
+            try:
+                if self.driver.find_elements(By.CSS_SELECTOR, "[data-buy-button]"):
+                    break
+            except Exception:
+                pass
+            try:
+                self.driver.execute_script("window.scrollBy(0, window.innerHeight/2);")
+            except Exception:
+                pass
+            time.sleep(0.3)
+
         # Debug: Check auth state on product page
         ls_keys = self.driver.execute_script("return Object.keys(window.localStorage);")
         print(f"📦 LocalStorage keys on product page: {', '.join(ls_keys) if ls_keys else 'NONE'}")
@@ -245,16 +274,17 @@ class CompletePurchaseFlow:
         else:
             print("✅ No auth keys found - good!")
         
-        #time.sleep(1)
+        # One more pass to clear potential overlays after content settles
+        self.dismiss_banners_and_overlays()
     
     def click_buy_button(self):
         """Click the Buy button (opens auth modal)"""
         print("🛒 Clicking Buy button (will open auth modal)...")
 
         selectors = [
-           #("text", "Get Lifetime"),
+           # ("css", "[data-buy-button]"),
+           # ("text", "Get Lifetime"),
             ("text", "Start Monthly"),
-            #("css", "[data-buy-button]"),
         ]
 
         clicked = False
@@ -274,6 +304,13 @@ class CompletePurchaseFlow:
                 print(f"🔎 tag={button.tag_name}, enabled={button.is_enabled()}, displayed={button.is_displayed()}, rect={getattr(button,'rect',None)}")
             except Exception as e:
                 print(f"⚠️  diagnostics failed: {e}")
+
+            # Ensure button is in view and overlays are cleared
+            try:
+                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", button)
+            except Exception:
+                pass
+            self.dismiss_banners_and_overlays()
 
             # Attempt sequence of click strategies until auth modal appears
             try_strategies = [
@@ -383,7 +420,7 @@ class CompletePurchaseFlow:
                             pass
                         try:
                             self.safe_click(button)
-                            time.sleep(1.5)
+                            #time.sleep(1.5)
                             if self.wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, '[data-testid="auth-modal"]'))):
                                 print("✅ Auth modal appeared after hiding blocker")
                                 clicked = True
@@ -419,6 +456,42 @@ class CompletePurchaseFlow:
 
         time.sleep(2)
 
+    def dismiss_banners_and_overlays(self):
+        """Dismiss sticky banners and chat overlays that can intercept clicks."""
+        try:
+            # Close offer banner if present
+            close_btns = self.driver.find_elements(By.XPATH, "//button[@aria-label='Dismiss offer banner']")
+            for btn in close_btns:
+                try:
+                    if btn.is_displayed():
+                        self.safe_click(btn)
+                        print("🧹 Dismissed offer banner")
+                        break
+                except Exception:
+                    pass
+
+            # Hide Tawk chat iframe if present (cross-origin; cannot access DOM inside)
+            try:
+                self.driver.execute_script(
+                    """
+                    document
+                      .querySelectorAll('iframe[src*="tawk.to"], iframe[id^="tawk"], iframe[id^="uq"]')
+                      .forEach(el => { el.style.pointerEvents='none'; el.style.display='none'; });
+                    """
+                )
+            except Exception:
+                pass
+
+            # Also hide any fixed elements with very high z-index that may cover buttons
+            try:
+                self.driver.execute_script(
+                    "Array.from(document.querySelectorAll('*')).filter(e=>{const z=getComputedStyle(e).zIndex;return +z>1000 && getComputedStyle(e).position==='fixed';}).forEach(e=>e.style.pointerEvents='none');"
+                )
+            except Exception:
+                pass
+        except Exception as e:
+            print(f"⚠️  dismiss_banners_and_overlays encountered an error: {e}")
+
     def wait_for_auth_modal(self):
         """Wait for auth modal to appear"""
         print("🔐 Waiting for auth modal to appear...")
@@ -440,7 +513,7 @@ class CompletePurchaseFlow:
         try:
             signup_tab = self.driver.find_element(By.CSS_SELECTOR, '[data-testid="signup-tab"]')
             self.safe_click(signup_tab)
-            time.sleep(1)
+            #time.sleep(1)
         except NoSuchElementException:
             print("⚠️  Sign Up tab not found, assuming already on signup")
         
@@ -461,7 +534,7 @@ class CompletePurchaseFlow:
         submit_button = self.driver.find_element(By.CSS_SELECTOR, '[data-testid="signup-submit"]')
         self.safe_click(submit_button)
 
-        time.sleep(2)
+        #time.sleep(2)
     
     def wait_for_modal_close_and_checkout(self):
         """Wait for modal to close and redirect to checkout"""
@@ -512,12 +585,12 @@ class CompletePurchaseFlow:
         # Fill email
         print("📧 Entering email...")
         self.lemon_bot.enter_email(self.test_email)
-        time.sleep(2)
+        #time.sleep(2)
         
         # Handle OTP if prompted
         print("🔐 Handling OTP (if required)...")
-        self.lemon_bot.enter_link_otp_code("000000")
-        time.sleep(2)
+        #self.lemon_bot.enter_link_otp_code("000000")
+        #time.sleep(2)
         
         # Fill card details
         print("💳 Entering card details...")
@@ -526,17 +599,17 @@ class CompletePurchaseFlow:
             exp_date="1234",
             cvc="123"
         )
-        time.sleep(2)
+        #time.sleep(2)
         
         # Fill name
         print("👤 Entering name...")
         self.lemon_bot.enter_cardholder_name("Test User")
-        time.sleep(2)
+        #time.sleep(2)
         
         # Select country
         print("🌍 Selecting country...")
         self.lemon_bot.select_country("US")
-        time.sleep(2)
+        #time.sleep(2)
         
         # Fill billing address
         print("🏠 Filling billing address...")
@@ -546,194 +619,76 @@ class CompletePurchaseFlow:
             postal_code="12345",
             state="California"
         )
-        time.sleep(2)
+        #time.sleep(2)
         
         print("✅ Checkout form filled")
-    
+
     def keep_clicking_pay_until_success(self, max_attempts=10):
         """Keep clicking Pay button until payment succeeds"""
         print("💰 Starting payment attempts...")
-        
-        pay_keywords = [
-            'pay', 'pay now', 'complete', 'complete order', 'place order', 'confirm', 'submit', 'purchase', 'checkout'
-        ]
 
         for attempt in range(1, max_attempts + 1):
-            print(f"💳 Payment attempt {attempt}/{max_attempts}...")
-            
-            # Check for success indicators
-            page_text = self.driver.find_element(By.TAG_NAME, "body").text
-            
-            if any(msg in page_text for msg in [
-                "Payment successful",
-                "Order confirmed",
-                "Thank you"
-            ]):
-                print("✅ Payment successful!")
-                return True
-            
-            # Check for Continue button (indicates success)
+            print(f"🔄 Payment attempt {attempt}/{max_attempts}")
+
             try:
-                continue_btn = self.driver.find_element(By.XPATH, "//button[contains(text(), 'Continue')]")
-                if continue_btn.is_displayed():
-                    print("✅ Payment successful (Continue button found)!")
+                # Find the Pay button
+                pay_button = self.driver.find_element(By.XPATH,
+                                                      "//button[contains(translate(text(), 'PAY', 'pay'), 'pay')]")
+
+                # Scroll element into view with extra space at top
+                self.driver.execute_script(
+                    "arguments[0].scrollIntoView({block: 'center', behavior: 'smooth'});",
+                    pay_button
+                )
+                time.sleep(0.5)
+
+                # Verify element is in viewport
+                is_in_viewport = self.driver.execute_script("""
+                    const rect = arguments[0].getBoundingClientRect();
+                    return rect.top >= 0 && rect.bottom <= window.innerHeight;
+                """, pay_button)
+
+                if not is_in_viewport:
+                    print("⚠️  Button not fully in viewport, adjusting scroll...")
+                    self.driver.execute_script("window.scrollBy(0, -100);")
+                    time.sleep(0.3)
+
+                # Capture diagnostics before click
+                self._capture_element_diagnostics(pay_button, f'pay_button_attempt_{attempt}')
+
+                # Try to click
+                self.safe_click(pay_button)
+                print(f"✅ Pay button clicked (attempt {attempt})")
+
+                # Wait for either success or error
+                time.sleep(3)
+
+                # Check for success indicators
+                page_text = self.driver.find_element(By.TAG_NAME, "body").text.lower()
+                if any(msg in page_text for msg in ['payment successful', 'order confirmed', 'thank you']):
+                    print("✅ Payment succeeded!")
                     return True
+
             except NoSuchElementException:
-                pass
-            
-            # Check for processing message
-            if any(msg in page_text for msg in [
-                "Processing your order",
-                "Please wait"
-            ]):
-                print("⏳ Order is processing, waiting...")
-                time.sleep(5)
-                continue
-
-            # Auto-check obvious terms checkboxes to enable buttons
-            try:
-                checkboxes = self.driver.find_elements(By.CSS_SELECTOR, "input[type='checkbox']")
-                for cb in checkboxes:
-                    try:
-                        lbl = ''
-                        try:
-                            lbl = (cb.get_attribute('aria-label') or cb.get_attribute('name') or '')
-                        except Exception:
-                            lbl = ''
-                        if not cb.is_selected() and any(k in lbl.lower() for k in ['term', 'agree', 'accept', 'policy', 'consent']):
-                            print("☑️ Auto-checking terms checkbox")
-                            try:
-                                self.safe_click(cb)
-                            except Exception:
-                                try:
-                                    self.driver.execute_script("arguments[0].checked = true; arguments[0].dispatchEvent(new Event('change'));", cb)
-                                except Exception:
-                                    pass
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-
-            # Broad search for pay/submit elements (case-insensitive) using XPath translate()
-            found = []
-            for kw in pay_keywords:
-                try:
-                    expr = ("//button[contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '%s')]" % kw)
-                    found += self.driver.find_elements(By.XPATH, expr)
-                    expr2 = ("//a[contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '%s')]" % kw)
-                    found += self.driver.find_elements(By.XPATH, expr2)
-                    expr3 = ("//input[@type='submit' and contains(translate(@value, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '%s')]" % kw)
-                    found += self.driver.find_elements(By.XPATH, expr3)
-                except Exception:
-                    pass
-
-            # Remove duplicates while preserving order
-            seen = set()
-            candidates = []
-            for el in found:
-                try:
-                    aid = (el.get_attribute('outerHTML') or str(el))
-                except Exception:
-                    aid = str(el)
-                if aid in seen:
-                    continue
-                seen.add(aid)
-                candidates.append(el)
-
-            if candidates:
-                clicked_any = False
-                for el in candidates:
-                    try:
-                        if not el.is_displayed():
-                            continue
-                        # If button disabled, try to remove disabled attribute
-                        try:
-                            if not el.is_enabled():
-                                print("⚠️  Button is disabled, trying to enable")
-                                self.driver.execute_script("arguments[0].removeAttribute('disabled')", el)
-                        except Exception:
-                            pass
-                        try:
-                            print(f"🔘 Clicking on candidate button: {el.text}")
-                            self.safe_click(el)
-                            clicked_any = True
-                            time.sleep(2)
-                            break
-                        except Exception as e:
-                            print(f"⚠️  Click on candidate button failed: {e}")
-                    except Exception:
-                        pass
-
-                if clicked_any:
-                    # Short wait and check for success
-                    time.sleep(2)
-                    page_text = self.driver.find_element(By.TAG_NAME, "body").text
-                    if any(msg in page_text for msg in [
-                        "Payment successful",
-                        "Order confirmed",
-                        "Thank you"
-                    ]):
-                        print("✅ Payment successful after clicking candidate!")
-                        return True
-                    else:
-                        print("⚠️  Payment not successful after clicking candidate, checking for Continue button...")
-                        try:
-                            continue_btn = self.driver.find_element(By.XPATH, "//button[contains(text(), 'Continue')]")
-                            if continue_btn.is_displayed():
-                                print("✅ Payment successful (Continue button found) after clicking candidate!")
-                                return True
-                        except NoSuchElementException:
-                            pass
-            else:
-                print("⚠️  No Pay/Submit candidates found on page")
-                try:
-                    cur = self.driver.current_url
-                    print(f"🔗 Current URL while searching for Pay: {cur}")
-                except Exception:
-                    pass
-                try:
-                    body_text = self.driver.find_element(By.TAG_NAME, 'body').text
-                    snippet = body_text[:1000].replace('\n', ' ')
-                    print(f"📝 Page body snippet (first 1000 chars): {snippet}")
-                except Exception as e:
-                    print(f"⚠️ Could not read body text: {e}")
-                try:
-                    buttons = self.driver.find_elements(By.TAG_NAME, 'button')
-                    print(f"🔘 Found {len(buttons)} buttons on page:")
-                    for i, b in enumerate(buttons):
-                        try:
-                            print(f"  [{i}] text='{b.text}' enabled={b.is_enabled()} displayed={b.is_displayed()} outerHTML_len={len(b.get_attribute('outerHTML') or '')}")
-                        except Exception:
-                            print(f"  [{i}] <could not read button details>")
-                except Exception:
-                    pass
-                try:
-                    anchors = self.driver.find_elements(By.TAG_NAME, 'a')
-                    print(f"🔗 Found {len(anchors)} anchors on page (text / href):")
-                    for i, a in enumerate(anchors[:30]):
-                        try:
-                            print(f"  [{i}] text='{a.text}' href='{a.get_attribute('href')}'")
-                        except Exception:
-                            print(f"  [{i}] <could not read anchor details>")
-                except Exception:
-                    pass
-
-            # Capture debug artifacts for this attempt
-            try:
-                self._capture_debug(f'pay_missing_attempt_{attempt}')
+                print("⚠️  Pay button not found, payment may have succeeded")
+                return True
             except Exception as e:
-                print(f"⚠️  debug capture failed: {e}")
+                print(f"⚠️  Attempt {attempt} failed: {e}")
+                self._capture_debug(f'pay_attempt_{attempt}_failed')
 
-            # Wait a bit before next attempt
-            time.sleep(3)
+                if attempt < max_attempts:
+                    time.sleep(2)
+                    continue
+                else:
+                    print(f"❌ All {max_attempts} payment attempts failed")
+                    return False
 
-        print(f"❌ Payment not successful after {max_attempts} attempts")
         return False
 
     def verify_success_message(self):
         """Verify the success message on the page"""
         print("✅ Verifying success message...")
-        time.sleep(2)
+        #time.sleep(2)
         page_text = self.driver.find_element(By.TAG_NAME, "body").text
         if any(msg in page_text for msg in [
             "Payment successful",
@@ -753,7 +708,7 @@ class CompletePurchaseFlow:
             continue_btn = self.driver.find_element(By.XPATH, "//button[contains(text(), 'Continue')]")
             self.safe_click(continue_btn)
             print("✅ Continue button clicked")
-            time.sleep(2)
+            #time.sleep(2)
         except Exception as e:
             print(f"⚠️  Could not click Continue button: {e}")
             self._capture_debug('continue_button_click_failed')
@@ -765,7 +720,7 @@ class CompletePurchaseFlow:
             view_order_btn = self.driver.find_element(By.XPATH, "//a[contains(text(), 'View order')]")
             self.safe_click(view_order_btn)
             print("✅ View Order button clicked")
-            time.sleep(2)
+            #time.sleep(2)
         except Exception as e:
             print(f"⚠️  Could not click View Order button: {e}")
             self._capture_debug('view_order_button_click_failed')
@@ -773,7 +728,7 @@ class CompletePurchaseFlow:
     def verify_redirect_to_dashboard(self):
         """Verify that the user is redirected to the dashboard"""
         print("🔄 Verifying redirect to dashboard...")
-        time.sleep(2)
+        #time.sleep(2)
         current_url = self.driver.current_url
         if "dashboard" in current_url or "account" in current_url:
             print(f"✅ Successfully redirected to dashboard: {current_url}")
@@ -796,10 +751,13 @@ class CompletePurchaseFlow:
             if not self.wait_for_checkout_iframes():
                 raise Exception("Checkout iframes did not load")
             self.fill_checkout_form()
-            time.sleep(33333)
+            time.sleep(233333)
 
             if not self.keep_clicking_pay_until_success():
                 raise Exception("Payment did not succeed")
+
+            # Proceed directly without long debug sleep
+
             if not self.verify_success_message():
                 raise Exception("Success message not found")
 

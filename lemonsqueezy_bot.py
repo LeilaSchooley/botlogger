@@ -285,7 +285,7 @@ class LemonSqueezyBot:
         try:
             print("Entering card details in payment element...")
             self.driver.switch_to.default_content()
-            time.sleep(2)
+           # time.sleep(2)
             
             # Find the payment element iframe
             iframes = self.driver.find_elements(By.TAG_NAME, "iframe")
@@ -310,9 +310,9 @@ class LemonSqueezyBot:
                             if card_field:
                                 print("Entering card number...")
                                 card_field.click()
-                                time.sleep(0.5)
+                                #time.sleep(0.5)
                                 card_field.send_keys(card_number)
-                                time.sleep(0.5)
+                                #time.sleep(0.5)
                         except Exception as e:
                             print(f"Error entering card number: {e}")
                         
@@ -325,9 +325,9 @@ class LemonSqueezyBot:
                             if exp_field:
                                 print("Entering expiry date...")
                                 exp_field.click()
-                                time.sleep(0.5)
+                                #time.sleep(0.5)
                                 exp_field.send_keys(exp_date)
-                                time.sleep(0.5)
+                                #time.sleep(0.5)
                         except Exception as e:
                             print(f"Error entering expiry date: {e}")
                         
@@ -340,9 +340,9 @@ class LemonSqueezyBot:
                             if cvc_field:
                                 print("Entering CVC...")
                                 cvc_field.click()
-                                time.sleep(0.5)
+                                #time.sleep(0.5)
                                 cvc_field.send_keys(cvc)
-                                time.sleep(0.5)
+                                #time.sleep(0.5)
                         except Exception as e:
                             print(f"Error entering CVC: {e}")
                         
@@ -375,13 +375,13 @@ class LemonSqueezyBot:
         try:
             print(f"Entering cardholder name: {name}")
             self.driver.switch_to.default_content()
-            time.sleep(0.5)
+            #time.sleep(0.5)
             
             # Try to find name field by ID
             try:
                 name_field = self.driver.find_element(By.ID, "name")
                 name_field.click()
-                time.sleep(0.5)
+                #time.sleep(0.5)
                 name_field.clear()
                 name_field.send_keys(name)
                 print("Cardholder name entered successfully")
@@ -393,7 +393,7 @@ class LemonSqueezyBot:
             try:
                 name_field = self.driver.find_element(By.CSS_SELECTOR, "[dusk='checkout-form-name']")
                 name_field.click()
-                time.sleep(0.5)
+                #time.sleep(0.5)
                 name_field.clear()
                 name_field.send_keys(name)
                 print("Cardholder name entered successfully")
@@ -452,7 +452,7 @@ class LemonSqueezyBot:
             try:
                 addr_field = self.driver.find_element(By.CSS_SELECTOR, "[dusk='checkout-form-line1']")
                 addr_field.click()
-                time.sleep(0.5)
+                #time.sleep(0.5)
                 addr_field.send_keys(address_line1)
                 print(f"Address: {address_line1}")
             except Exception as e:
@@ -462,7 +462,7 @@ class LemonSqueezyBot:
             try:
                 city_field = self.driver.find_element(By.ID, "city")
                 city_field.click()
-                time.sleep(0.5)
+                #time.sleep(0.5)
                 city_field.send_keys(city)
                 print(f"City: {city}")
             except Exception as e:
@@ -472,7 +472,7 @@ class LemonSqueezyBot:
             try:
                 postal_field = self.driver.find_element(By.ID, "postal_code")
                 postal_field.click()
-                time.sleep(0.5)
+                #time.sleep(0.5)
                 postal_field.send_keys(postal_code)
                 print(f"Postal code: {postal_code}")
             except Exception as e:
@@ -484,7 +484,7 @@ class LemonSqueezyBot:
                     # Try as a v-select dropdown first (common in Lemon Squeezy)
                     state_input = self.driver.find_element(By.CSS_SELECTOR, "#state input.vs__search")
                     state_input.click()
-                    time.sleep(0.5)
+                    #time.sleep(0.5)
                     state_input.send_keys(state)
                     time.sleep(0.5)
                     # Press Enter to select the first match
@@ -543,7 +543,7 @@ class LemonSqueezyBot:
         
         # Enter Link OTP code if prompted (in test mode, just enter 000000 directly)
         # No need to click "Send code to email" - just enter the test code
-        self.enter_link_otp_code(otp_code)
+        #self.enter_link_otp_code(otp_code)
         
         # Enter card details in payment element
         self.enter_card_details_in_payment_element(card_number, exp_date, cvc)
